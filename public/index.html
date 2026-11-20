@@ -69,7 +69,10 @@
   .empty, .err { color: var(--dim); font-size: 14px; padding: 4px 2px 12px; }
   .err { color: var(--alert); }
   /* Best route */
-  .plan { padding: 16px; }
+  .plan { padding: 0; }
+  .plan-head { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 16px; min-height: 60px; }
+  .plan-head .sub b { color: var(--now); font-weight: 700; }
+  .plan-body { padding: 0 16px 6px; }
   .plan-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .plan-title { font-weight: 700; font-size: 17px; }
   .seg { display: inline-flex; background: var(--well); border: 1px solid #2a2d35; border-radius: 10px; padding: 2px; }
@@ -428,16 +431,23 @@ function renderPlan() {
     </div>`;
   }).join("");
 
+  const pOpen = open.has("plan");
+  const teaser = bestR
+    ? `${esc(bestR.opt.name)} to ${esc(places[dest].name)} · ${by ? `leave by <b>${hm(bestR.leave)}</b>` : `arrive <b>${hm(bestR.arrive)}</b>`}`
+    : `Plan a trip to ${esc(places[dest].name)}`;
   el.innerHTML = `
-    <div class="plan-top">
-      <span class="plan-title">Best route</span>
+    <button class="plan-head" data-toggle="plan" aria-expanded="${pOpen}">
+      <div style="min-width:0"><div class="plan-title">Best route</div>${pOpen ? "" : `<div class="sub">${teaser}</div>`}</div>
+      ${CHEV}
+    </button>
+    ${pOpen ? `<div class="plan-body">
       <span class="seg" role="group" aria-label="Destination">
         ${Object.entries(places).map(([k, p]) => `<button data-dest="${k}" aria-pressed="${k === dest}">to ${esc(p.name)}</button>`).join("")}
       </span>
-    </div>
-    <div class="plan-from">${esc(fromLabel)}</div>
-    <div class="by"><label for="by">Arrive by</label><input id="by" type="time" value="${esc(deadline)}">${deadline ? `<button data-clear-by>Clear</button>` : `<span>or leave now</span>`}</div>
-    ${rows}`;
+      <div class="plan-from">${esc(fromLabel)}</div>
+      <div class="by"><label for="by">Arrive by</label><input id="by" type="time" value="${esc(deadline)}">${deadline ? `<button data-clear-by>Clear</button>` : `<span>or leave now</span>`}</div>
+      ${rows}
+    </div>` : ""}`;
 }
 
 document.addEventListener("click", (e) => {
