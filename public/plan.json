@@ -61,15 +61,86 @@
       "name": "W 14 St & 5 Av",
       "lat": 40.736229,
       "lon": -73.993956
+    },
+    "405530": {
+      "name": "Lexington Av & E 37 St",
+      "lat": 40.748126,
+      "lon": -73.978535
+    },
+    "400322": {
+      "name": "5 Av & W 39 St",
+      "lat": 40.751407,
+      "lon": -73.982463
+    },
+    "631S": {
+      "name": "Grand Central–42 St",
+      "lat": 40.751776,
+      "lon": -73.976848
+    },
+    "635S": {
+      "name": "14 St–Union Sq",
+      "lat": 40.734673,
+      "lon": -73.989951
+    },
+    "635N": {
+      "name": "14 St–Union Sq",
+      "lat": 40.734673,
+      "lon": -73.989951
+    },
+    "631N": {
+      "name": "Grand Central–42 St",
+      "lat": 40.751776,
+      "lon": -73.976848
     }
   },
   "options": [
     {
       "to": "parsons",
+      "name": "4/5/6 train",
+      "legs": [
+        {
+          "mode": "subway",
+          "board": "631S",
+          "alight": "635S",
+          "routes": [
+            "4",
+            "5",
+            "6"
+          ],
+          "enter": 2,
+          "exit": 1
+        }
+      ]
+    },
+    {
+      "to": "parsons",
+      "name": "5th Ave buses",
+      "legs": [
+        {
+          "board": [
+            "400323",
+            "400322"
+          ],
+          "routes": [
+            "M1",
+            "M2",
+            "M3",
+            "M55"
+          ],
+          "alight": "402857",
+          "ride": 13
+        }
+      ]
+    },
+    {
+      "to": "parsons",
       "name": "Lex Av bus, then M14",
       "legs": [
         {
-          "board": "403821",
+          "board": [
+            "405530",
+            "403821"
+          ],
           "routes": [
             "M101",
             "M102",
@@ -93,7 +164,10 @@
       "name": "Lex Av bus, then walk",
       "legs": [
         {
-          "board": "403821",
+          "board": [
+            "405530",
+            "403821"
+          ],
           "routes": [
             "M101",
             "M102",
@@ -101,23 +175,6 @@
           ],
           "alight": "404106",
           "ride": 12
-        }
-      ]
-    },
-    {
-      "to": "parsons",
-      "name": "5th Ave buses",
-      "legs": [
-        {
-          "board": "400323",
-          "routes": [
-            "M1",
-            "M2",
-            "M3",
-            "M55"
-          ],
-          "alight": "402857",
-          "ride": 13
         }
       ]
     },
@@ -163,6 +220,24 @@
           ],
           "alight": "402677",
           "ride": 15
+        }
+      ]
+    },
+    {
+      "to": "home",
+      "name": "4/5/6 train",
+      "legs": [
+        {
+          "mode": "subway",
+          "board": "635N",
+          "alight": "631N",
+          "routes": [
+            "4",
+            "5",
+            "6"
+          ],
+          "enter": 2,
+          "exit": 1
         }
       ]
     },

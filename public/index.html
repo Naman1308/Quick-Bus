@@ -46,6 +46,8 @@
   .route { border-top: 1px solid var(--line); }
   .route-head { width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto 18px; gap: 12px; align-items: center; padding: 12px 2px; min-height: 60px; }
   .route.none .route-head { opacity: .55; }
+  .chip.sub { background: #00933c; width: 32px; height: 32px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 16px; justify-self: center; }
+  .opt-steps .chip-s.sub { background: #00933c; border-radius: 50%; min-width: 18px; text-align: center; padding: 1px 4px; }
   .chip { background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; padding: 5px 0; border-radius: 8px; text-align: center; }
   .dest { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .then { display: block; font-size: 13px; color: var(--dim); margin-top: 2px; }
@@ -175,6 +177,24 @@ async function getArrivals(code) {
   } catch (e) { return { error: "Can't reach the server" }; }
 }
 
+const subKey = (from, to, routes) => `sub:${from}>${to}:${routes.join(",")}`;
+async function getSubway(from, to, routes) {
+  try {
+    const r = await fetch(`/api/subway?from=${from}&to=${to}&routes=${routes.join(",")}`);
+    const d = await r.json().catch(() => ({ error: "Bad response" }));
+    if (!r.ok && !d.error) d.error = `Error ${r.status}`;
+    return d;
+  } catch { return { error: "Can't reach the server" }; }
+}
+// Make subway runs look like bus arrivals so the same cards can show them.
+function subwayAsArrivals(stop, d) {
+  if (!d || d.error) return d;
+  const now = Date.now();
+  return { buses: d.runs.map((r) => ({ route: r.route, destination: `${stop.toName || "destination"}, arrives ${new Date(r.arr).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`,
+    expected: new Date(r.dep).toISOString(), minutes: Math.max(0, Math.round((r.dep - now) / 60000)) })), alerts: [] };
+}
+const isSubway = (route) => /^[1-7A-Z]$/.test(route || "");
+const dataFor = (s) => (s.type === "subway" ? subwayAsArrivals(s, cache[subKey(s.stop, s.to, s.routes)]) : cache[s.stop]);
 const clock = (b) => {
   const t = b.expected ? new Date(b.expected) : b.minutes != null ? new Date(Date.now() + b.minutes * 60000) : null;
   return t ? t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
@@ -232,15 +252,15 @@ function busRow(b) {
 function routeRow(key, r) {
   const rOpen = open.has(key);
   if (!r.buses.length) {
-    return `<div class="route none"><div class="route-head"><span class="chip">${esc(r.route)}</span>
-      <span><span class="dest">No buses tracked right now</span></span><span></span><span></span></div></div>`;
+    return `<div class="route none"><div class="route-head"><span class="chip ${isSubway(r.route) ? "sub" : ""}">${esc(r.route)}</span>
+      <span><span class="dest">Nothing tracked right now</span></span><span></span><span></span></div></div>`;
   }
   const first = r.buses[0];
   const later = r.buses.slice(1, 4).map((b) => b.minutes).filter((m) => m != null);
   return `<div class="route">
     <button class="route-head" data-toggle="${esc(key)}" aria-expanded="${rOpen}">
-      <span class="chip">${esc(r.route)}</span>
-      <span style="min-width:0"><span class="dest">to ${esc(nice(first.destination))}</span><span class="then">${later.length ? `then ${later.join(" · ")} min` : "no other buses tracked"}</span></span>
+      <span class="chip ${isSubway(r.route) ? "sub" : ""}">${esc(r.route)}</span>
+      <span style="min-width:0"><span class="dest">to ${esc(isSubway(r.route) ? first.destination : nice(first.destination))}</span><span class="then">${later.length ? `then ${later.join(" · ")} min` : isSubway(r.route) ? "no other trains tracked" : "no other buses tracked"}</span></span>
       <span class="eta ${isNow(first) ? "now" : ""}">${first.minutes != null ? `<b>${first.minutes}</b><span> min</span>` : `<span>${esc(first.proximity || "")}</span>`}</span>
       ${CHEV}
     </button>
@@ -259,7 +279,7 @@ function card(stop, data, { alwaysOpen = false } = {}) {
     if (!data) summary = `<div class="sub">Loading…</div>`;
     else if (data.error) summary = `<div class="sub" style="color:var(--alert)">${esc(data.error)}</div>`;
     else if (!live.length) summary = `<div class="sub">No buses tracked right now</div>`;
-    else summary = `<div class="summary">${live.map((r, i) => `<span class="pill ${i === 0 ? "soon" : ""}">${esc(r.route)} ${r.next}′</span>`).join("")}</div>`;
+    else summary = `<div class="summary">${live.map((r, i) => `<span class="pill ${i === 0 ? "soon" : ""}">${esc(r.route)}${isSubway(r.route) ? " train" : ""} ${r.next}′</span>`).join("")}</div>`;
   }
 
   let body = "";
@@ -308,8 +328,12 @@ const hm = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: 
 const routeOk = (r, want) => want.some((w) => (r || "").toUpperCase().startsWith(w.toUpperCase()));
 
 // Buses at a leg's boarding stop, each with the time that same bus reaches the drop-off.
-function legRuns(leg) {
-  const board = cache[leg.board], alight = cache[leg.alight];
+function legRuns(leg, boardCode = leg.board) {
+  if (leg.mode === "subway") {
+    const d = cache[subKey(leg.board, leg.alight, leg.routes)];
+    return !d || d.error ? null : d.runs.map((r) => ({ ...r }));
+  }
+  const board = cache[boardCode], alight = cache[leg.alight];
   if (!board || board.error || !alight || alight.error) return null;
   const at = new Map(), servedRoutes = new Set();
   for (const b of alight.buses || []) { if (b.vehicle) at.set(b.vehicle, tOf(b)); servedRoutes.add(b.route); }
@@ -332,17 +356,26 @@ function chain(opt, from, t0, firstRun) {
   if (opt.walk) { const w = walkMin(from, to); return { leave: t0, arrive: t0 + w * 60000, steps: [{ walk: w }] }; }
   let pos = from, t = t0, leave = null; const steps = [];
   for (let i = 0; i < opt.legs.length; i++) {
-    const leg = opt.legs[i], stop = PLAN.stops[leg.board], off = PLAN.stops[leg.alight];
-    const w = walkMin(pos, stop), ready = t + w * 60000;
-    const runs = legRuns(leg);
-    if (!runs) return { missing: true };
-    let run;
-    if (i === 0 && firstRun) { run = firstRun; if (run.dep < ready - 30000) return null; }
-    else run = runs.filter((r) => r.dep >= ready - 30000).sort((a, b) => a.arr - b.arr)[0];
-    if (!run) return null;
-    if (i === 0) leave = run.dep - w * 60000;
+    const leg = opt.legs[i], off = PLAN.stops[leg.alight];
+    // A leg can offer several boarding stops (e.g. 36 St or 39 St); take whichever gets you off soonest.
+    let pick = null, anyData = false;
+    for (const code of [].concat(leg.board)) {
+      const stop = PLAN.stops[code];
+      const w = walkMin(pos, stop) + (leg.enter || 0), ready = t + w * 60000;
+      const runs = legRuns(leg, code);
+      if (!runs) continue;
+      anyData = true;
+      let run;
+      if (i === 0 && firstRun) { run = firstRun.code === code || firstRun.code == null ? firstRun : null; if (run && run.dep < ready - 30000) run = null; }
+      else run = runs.filter((r) => r.dep >= ready - 30000).sort((a, b) => a.arr - b.arr)[0];
+      if (run && (!pick || run.arr < pick.run.arr || (run.arr === pick.run.arr && run.dep - w * 60000 > pick.leave))) pick = { run, w, stop, leave: run.dep - w * 60000 };
+    }
+    if (!anyData) return { missing: true };
+    if (!pick) return null;
+    const { run, w, stop } = pick;
+    if (i === 0) leave = pick.leave;
     steps.push({ walk: w, to: stop.name }, { route: run.route, dep: run.dep, arr: run.arr, off: off.name });
-    pos = off; t = run.arr;
+    pos = off; t = run.arr + (leg.exit || 0) * 60000;
   }
   const wEnd = walkMin(pos, to);
   steps.push({ walk: wEnd, to: to.name });
@@ -367,8 +400,9 @@ function planOptions(from) {
     }
     if (!by) { const c = chain(opt, from, now); return c && !c.missing ? { opt, ...c, ok: true } : { opt, none: true, missing: c?.missing }; }
     // Arrive-by: try each catchable first bus, keep the latest departure that still makes it.
-    const runs = legRuns(opt.legs[0]);
-    if (!runs) return { opt, none: true, missing: true };
+    const boards = [].concat(opt.legs[0].board);
+    if (boards.every((c) => !legRuns(opt.legs[0], c))) return { opt, none: true, missing: true };
+    const runs = boards.flatMap((code) => (legRuns(opt.legs[0], code) || []).map((r) => ({ ...r, code })));
     let best = null, latestSeen = 0, earliest = null;
     for (const r of runs) {
       const c = chain(opt, from, now, r);
@@ -385,7 +419,7 @@ function planOptions(from) {
 
 function stepsHtml(steps) {
   return steps.map((st) => st.route
-    ? `<span class="chip-s">${esc(st.route)}</span> ${hm(st.dep)} → off ${esc(st.off)} ${hm(st.arr)}`
+    ? `<span class="chip-s ${isSubway(st.route) ? "sub" : ""}">${esc(st.route)}</span> ${hm(st.dep)} → off ${esc(st.off)} ${hm(st.arr)}`
     : `Walk ${st.walk} min${st.to ? ` to ${esc(st.to)}` : ""}`).join(" · ");
 }
 
@@ -460,15 +494,21 @@ document.addEventListener("change", (e) => {
 });
 
 function render() {
-  $("#stops").innerHTML = orderedStops().map((s) => card(s, cache[s.stop])).join("") || `<p class="empty">No saved stops yet.</p>`;
+  $("#stops").innerHTML = orderedStops().map((s) => card(s, dataFor(s))).join("") || `<p class="empty">No saved stops yet.</p>`;
   renderPlan();
   $("#adhoc").innerHTML = adhoc ? card({ stop: adhoc }, cache[adhoc], { alwaysOpen: true }) : "";
 }
 
 async function refresh() {
   $("#stops").classList.add("spin");
-  const planCodes = PLAN ? Object.keys(PLAN.stops) : [];
-  const codes = [...new Set([...stops.map((s) => s.stop), ...planCodes, ...(adhoc ? [adhoc] : [])])];
+  const isBusCode = (c) => /^\d{6}$/.test(c);
+  const planCodes = PLAN ? Object.keys(PLAN.stops).filter(isBusCode) : [];
+  const codes = [...new Set([...stops.filter((s) => s.type !== "subway").map((s) => s.stop), ...planCodes, ...(adhoc ? [adhoc] : [])])];
+  const subs = new Map();
+  for (const s of stops) if (s.type === "subway") subs.set(subKey(s.stop, s.to, s.routes), [s.stop, s.to, s.routes]);
+  for (const o of PLAN?.options || []) for (const l of o.legs || []) if (l.mode === "subway") subs.set(subKey(l.board, l.alight, l.routes), [l.board, l.alight, l.routes]);
+  const subResults = await Promise.all([...subs.values()].map(([f, t, r]) => getSubway(f, t, r)));
+  [...subs.keys()].forEach((k, i) => (cache[k] = subResults[i]));
   const results = await Promise.all(codes.map(getArrivals));
   codes.forEach((c, i) => (cache[c] = results[i]));
   fetchedAt = Date.now();

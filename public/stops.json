@@ -1,16 +1,31 @@
 [
   {
-    "label": "Home → Parsons via Lex Av",
-    "from": "Lexington Av & E 34 St",
+    "type": "subway",
+    "label": "Home → Parsons via 4/5/6",
+    "from": "Grand Central–42 St",
     "dir": "down",
-    "stop": "403821",
+    "stop": "631S",
+    "to": "635S",
+    "toName": "Union Sq",
     "routes": [
-      "M101",
+      "4",
+      "5",
+      "6"
+    ],
+    "lat": 40.751776,
+    "lon": -73.976848
+  },
+  {
+    "label": "Home → Parsons via Lex Av",
+    "from": "Lexington Av & E 37 St",
+    "dir": "down",
+    "stop": "405530",
+    "routes": [
       "M102",
       "M103"
     ],
-    "lat": 40.746226,
-    "lon": -73.979892
+    "lat": 40.748126,
+    "lon": -73.978535
   },
   {
     "label": "3 Av → Parsons",
