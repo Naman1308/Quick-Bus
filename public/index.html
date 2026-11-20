@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Buses">
+<meta name="theme-color" content="#0e0f12">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>Buses</title>
+<style>
+  :root {
+    --bg: #0e0f12; --card: #17191e; --line: #262930; --text: #f2f2f0; --dim: #8b8f98;
+    --accent: #2f6df6; --now: #3ddc84; --warn: #ffb547; --alert: #ff6b5e;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    padding: max(18px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+    -webkit-font-smoothing: antialiased;
+  }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin: 8px 2px 18px; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+  #updated { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
+  .card-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .label { font-weight: 650; font-size: 17px; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .code { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bus { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .bus:first-of-type { border-top: 0; }
+  .chip { background: var(--accent); color: #fff; font-weight: 700; font-size: 14px; padding: 4px 9px; border-radius: 8px; min-width: 52px; text-align: center; }
+  .dest { font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .where { font-size: 14px; }
+  .eta { text-align: right; font-variant-numeric: tabular-nums; }
+  .eta b { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .eta small { color: var(--dim); font-size: 12px; display: block; }
+  .eta.now b { color: var(--now); }
+  .term { color: var(--warn); font-size: 12px; }
+  .alert { color: var(--alert); font-size: 13px; margin-bottom: 8px; }
+  .alert summary { cursor: pointer; }
+  .alert.other summary { color: var(--dim); }
+  .alert p { color: var(--text); margin-top: 6px; white-space: pre-wrap; }
+  .empty, .err { color: var(--dim); font-size: 14px; padding: 6px 0; }
+  .err { color: var(--alert); }
+  .lookup { display: flex; gap: 8px; margin: 22px 0 12px; }
+  .lookup input {
+    flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--text);
+    font: inherit; padding: 12px 14px; font-variant-numeric: tabular-nums;
+  }
+  .lookup button { flex: none; background: var(--accent); border-radius: 12px; padding: 0 18px; font-weight: 600; }
+  .foot { text-align: center; color: var(--dim); font-size: 12px; margin-top: 18px; }
+  .spin { opacity: .45; transition: opacity .2s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Buses</h1>
+  <button id="refresh" aria-label="Refresh"><span id="updated">Loading…</span> ↻</button>
+</header>
+
+<main id="stops"></main>
+
+<form class="lookup" id="lookup">
+  <input id="code" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="Any stop code (6 digits)" autocomplete="off">
+  <button type="submit">Check</button>
+</form>
+<main id="adhoc"></main>
+
+<p class="foot">Live data from MTA Bus Time · refreshes every 30s</p>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let stops = [];
+let adhoc = null;
+
+async function getArrivals(code) {
+  const r = await fetch(`/api/arrivals?stop=${code}`);
+  const data = await r.json().catch(() => ({ error: "Bad response" }));
+  if (!r.ok && !data.error) data.error = `Error ${r.status}`;
+  return data;
+}
+
+function busRow(b) {
+  const now = b.minutes === 0 || /approaching|at stop/i.test(b.proximity || "");
+  const big = b.minutes != null ? `<b>${b.minutes}<span style="font-size:14px"> min</span></b>` : "";
+  const away = b.stopsAway === 0 ? (b.proximity || "approaching")
+    : b.stopsAway != null ? `${b.stopsAway} stop${b.stopsAway == 1 ? "" : "s"} away` : b.proximity;
+  const where = [away, b.passengers != null ? `~${b.passengers} on board` : null]
+    .filter(Boolean).join(" · ");
+  return `<div class="bus">
+    <span class="chip">${esc(b.route)}</span>
+    <div style="min-width:0">
+      <div class="where">${esc(where || b.proximity || "")}</div>
+      <div class="dest">to ${esc(b.destination)}${b.atTerminal ? ` <span class="term">· at terminal</span>` : b.prevTrip ? ` <span class="term">· finishing previous trip</span>` : ""}</div>
+    </div>
+    <div class="eta ${now ? "now" : ""}">${big}${b.miles != null ? `<small>${b.miles} mi</small>` : ""}</div>
+  </div>`;
+}
+
+function card(stop, data) {
+  let body;
+  if (!data) body = `<p class="empty">Loading…</p>`;
+  else if (data.error) body = `<p class="err">${esc(data.error)}</p>`;
+  else {
+    const want = (stop.routes || []).map((r) => r.toUpperCase());
+    const buses = data.buses
+      .filter((b) => !want.length || want.some((w) => (b.route || "").toUpperCase().startsWith(w)))
+      .sort((a, b) => (a.minutes ?? 999) - (b.minutes ?? 999))
+      .slice(0, stop.show || 4);
+    // Alerts come for the whole route; surface ones that mention this stop's streets, fold the rest.
+    const nums = [...(data.stopName || "").matchAll(/\b(\d+)\s*ST\b/gi)].map((m) => m[1]);
+    const avs = [...(data.stopName || "").matchAll(/\b(LEXINGTON|PARK|MADISON|BROADWAY|UNIVERSITY|IRVING|\d+)\s*(AV|PL)?\b/gi)].map((m) => m[1]);
+    const hits = (a) => {
+      const t = `${a.summary} ${a.description || ""}`;
+      return nums.some((n) => new RegExp(`\\b${n}(st|nd|rd|th)?\\s*st`, "i").test(t)) &&
+        (!avs.length || avs.some((v) => new RegExp(`\\b${v}(st|nd|rd|th)?\\b`, "i").test(t)));
+    };
+    const all = data.alerts || [];
+    const near = all.filter(hits), other = all.filter((a) => !hits(a));
+    const alertHtml = (a) =>
+      `<details class="alert"><summary>⚠ ${esc(a.summary || "Service notice")}</summary>${a.description && a.description !== a.summary ? `<p>${esc(a.description)}</p>` : ""}</details>`;
+    const alerts = near.map(alertHtml).join("") + (other.length
+      ? `<details class="alert other"><summary>${other.length} other notice${other.length > 1 ? "s" : ""} on these routes</summary>${other.map((a) => `<p>• ${esc(a.summary)}</p>`).join("")}</details>`
+      : "");
+    body = alerts + (buses.length ? buses.map(busRow).join("") : `<p class="empty">No buses tracked right now.</p>`);
+  }
+  const sub = stop.note || (stop.label ? "" : "");
+  return `<section class="card">
+    <div class="card-head">
+      <div><div class="label">${esc(stop.label || data?.stopName || "Stop " + stop.stop)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>
+      <div class="code">#${esc(stop.stop)}</div>
+    </div>${body}</section>`;
+}
+
+async function refresh() {
+  $("#stops").classList.add("spin");
+  const results = await Promise.all(stops.map((s) => getArrivals(s.stop).catch((e) => ({ error: e.message }))));
+  $("#stops").innerHTML = stops.map((s, i) => card(s, results[i])).join("") || `<p class="empty">No saved stops yet — add them to stops.json.</p>`;
+  $("#stops").classList.remove("spin");
+  if (adhoc) $("#adhoc").innerHTML = card({ stop: adhoc }, await getArrivals(adhoc));
+  $("#updated").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+async function init() {
+  stops = await fetch("/stops.json", { cache: "no-cache" }).then((r) => r.json()).catch(() => []);
+  $("#stops").innerHTML = stops.map((s) => card(s, null)).join("");
+  refresh();
+  setInterval(() => document.visibilityState === "visible" && refresh(), 30000);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && refresh());
+}
+
+$("#refresh").onclick = refresh;
+$("#lookup").onsubmit = async (e) => {
+  e.preventDefault();
+  const code = $("#code").value.trim();
+  if (!/^\d{6}$/.test(code)) return;
+  adhoc = code;
+  $("#adhoc").innerHTML = card({ stop: code }, null);
+  $("#adhoc").innerHTML = card({ stop: code }, await getArrivals(code));
+  $("#code").blur();
+};
+
+init();
+</script>
+</body>
+</html>

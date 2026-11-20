@@ -1,0 +1,20 @@
+[
+  {
+    "label": "Lexington Av & E 34 St",
+    "stop": "403821",
+    "routes": ["M101", "M102", "M103"],
+    "note": "Downtown to 3 Av & E 14 St"
+  },
+  {
+    "label": "5 Av & 36 St",
+    "stop": "400323",
+    "routes": [],
+    "note": "Downtown"
+  },
+  {
+    "label": "14 St & University Pl",
+    "stop": "404271",
+    "routes": ["M14"],
+    "note": "Eastbound to 1 Av"
+  }
+]
