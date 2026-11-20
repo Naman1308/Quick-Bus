@@ -240,12 +240,29 @@ document.addEventListener("click", (e) => {
   render();
 });
 
+// Home-screen apps can stay in memory for days; when the app comes back, reload if a new version was deployed.
+let version = null;
+async function currentVersion() {
+  try {
+    const r = await fetch("/?check=" + Date.now(), { method: "HEAD", cache: "no-store" });
+    return r.headers.get("etag") || r.headers.get("last-modified");
+  } catch { return null; }
+}
+async function checkForUpdate() {
+  const v = await currentVersion();
+  if (v && version && v !== version) location.reload();
+  if (v && !version) version = v;
+}
+
 async function init() {
+  checkForUpdate();
   stops = await fetch("/stops.json", { cache: "no-cache" }).then((r) => r.json()).catch(() => []);
   render();
   refresh();
   setInterval(() => document.visibilityState === "visible" && refresh(), 30000);
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && refresh());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { checkForUpdate(); refresh(); }
+  });
 }
 
 $("#refresh").onclick = refresh;
