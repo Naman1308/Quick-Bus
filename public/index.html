@@ -481,8 +481,14 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-toggle]");
   if (!t) return;
   const key = t.dataset.toggle;
-  if (key.startsWith("s:") ? isOpen(key) : open.has(key)) { open.delete(key); dismissed.add(key); }
-  else { open.add(key); dismissed.delete(key); }
+  const top = (k) => k === "plan" || k.startsWith("s:");
+  if (top(key) ? isOpen(key) : open.has(key)) { open.delete(key); dismissed.add(key); }
+  else {
+    // Accordion: opening a section closes the others at the same level.
+    for (const k of [...open]) if (top(k) === top(key) && k !== key) open.delete(k);
+    if (top(key)) { const n = nearestKey(); if (n && n !== key) dismissed.add(n); }
+    open.add(key); dismissed.delete(key);
+  }
   saveOpen();
   render();
 });
