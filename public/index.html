@@ -68,6 +68,30 @@
   .alert p { color: var(--text); margin-top: 6px; white-space: pre-wrap; }
   .empty, .err { color: var(--dim); font-size: 14px; padding: 4px 2px 12px; }
   .err { color: var(--alert); }
+  /* Best route */
+  .plan { padding: 16px; }
+  .plan-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .plan-title { font-weight: 700; font-size: 17px; }
+  .seg { display: inline-flex; background: var(--well); border: 1px solid #2a2d35; border-radius: 10px; padding: 2px; }
+  .seg button { min-height: 36px; padding: 0 12px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--dim); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .plan-from { font-size: 13px; color: var(--dim); margin-top: 6px; }
+  .by { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; color: var(--dim); }
+  .by input { background: var(--well); border: 1px solid #2a2d35; border-radius: 10px; color: var(--text); font: inherit; padding: 8px 10px; min-height: 40px; color-scheme: dark; }
+  .by button { color: #8fb0ff; font-size: 14px; min-height: 40px; padding: 0 4px; }
+  .opt { border-top: 1px solid var(--line); padding: 12px 0 10px; margin-top: 12px; }
+  .opt + .opt { margin-top: 0; }
+  .opt-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .opt-name { font-size: 15px; font-weight: 600; }
+  .best-tag { font-size: 11px; font-weight: 700; color: #0e0f12; background: var(--now); border-radius: 6px; padding: 2px 6px; margin-left: 6px; vertical-align: 2px; }
+  .opt-arr { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .opt-arr b { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .opt.best .opt-arr b { color: var(--now); }
+  .opt-arr span { font-size: 12px; color: var(--dim); }
+  .opt-leave { font-size: 13px; margin-top: 2px; }
+  .opt-steps { font-size: 13px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
+  .opt-steps .chip-s { display: inline-block; background: var(--accent); color: #fff; font-weight: 700; font-size: 12px; padding: 1px 6px; border-radius: 5px; }
+  .opt.dim { opacity: .55; }
   .lookup { display: flex; gap: 8px; margin: 22px 0 12px; }
   .lookup input {
     flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--text);
@@ -84,6 +108,7 @@
   <button id="refresh" aria-label="Refresh"><span id="updated">Loading…</span> ↻</button>
 </header>
 
+<section class="card plan" id="plan" aria-live="polite"></section>
 <main id="stops"></main>
 
 <form class="lookup" id="lookup">
@@ -216,7 +241,7 @@ function routeRow(key, r) {
       <span class="eta ${isNow(first) ? "now" : ""}">${first.minutes != null ? `<b>${first.minutes}</b><span> min</span>` : `<span>${esc(first.proximity || "")}</span>`}</span>
       ${CHEV}
     </button>
-    ${rOpen ? `<div class="buses">${r.buses.map(busRow).join("")}</div>` : ""}
+    ${rOpen ? `<div class="buses">${r.buses.slice(0, 6).map(busRow).join("")}</div>` : ""}
   </div>`;
 }
 
@@ -259,16 +284,184 @@ function card(stop, data, { alwaysOpen = false } = {}) {
   </section>`;
 }
 
+
+// ---------- Best route ----------
+// For each way of getting there: walk to the stop, catch the first bus you can make, follow that exact bus
+// (by vehicle id) to the drop-off stop, then walk. Rank by arrival, or by latest departure for an "arrive by" time.
+let PLAN = null;
+let dest = (() => { try { return localStorage.getItem("qb-dest"); } catch { return null; } })();
+let deadline = ""; // "HH:MM" or ""
+let fetchedAt = Date.now();
+
+function walkMin(a, b) {
+  // Manhattan's street grid is rotated ~29°; measure along avenues + streets, ~2.9 mph, +1 min for lights.
+  const dx = (b.lon - a.lon) * 69.17 * Math.cos((a.lat * Math.PI) / 180), dy = (b.lat - a.lat) * 69.17;
+  const th = (29 * Math.PI) / 180;
+  const along = Math.abs(dx * Math.sin(th) + dy * Math.cos(th)), across = Math.abs(dx * Math.cos(th) - dy * Math.sin(th));
+  return Math.round(((along + across) / 2.9) * 60 + 1);
+}
+const tOf = (b) => (b.expected ? Date.parse(b.expected) : b.minutes != null ? fetchedAt + b.minutes * 60000 : null);
+const hm = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const routeOk = (r, want) => want.some((w) => (r || "").toUpperCase().startsWith(w.toUpperCase()));
+
+// Buses at a leg's boarding stop, each with the time that same bus reaches the drop-off.
+function legRuns(leg) {
+  const board = cache[leg.board], alight = cache[leg.alight];
+  if (!board || board.error || !alight || alight.error) return null;
+  const at = new Map(), servedRoutes = new Set();
+  for (const b of alight.buses || []) { if (b.vehicle) at.set(b.vehicle, tOf(b)); servedRoutes.add(b.route); }
+  const runs = [];
+  for (const b of board.buses || []) {
+    if (!routeOk(b.route, leg.routes)) continue;
+    const dep = tOf(b);
+    if (dep == null) continue;
+    let arr = b.vehicle ? at.get(b.vehicle) : null;
+    if (arr == null && servedRoutes.has(b.route)) arr = dep + (leg.ride || 12) * 60000; // bus too far out to be listed yet
+    if (arr == null || arr <= dep) continue; // e.g. a Limited that skips the drop-off
+    runs.push({ route: b.route, dep, arr });
+  }
+  return runs;
+}
+
+// Follow an option from `from` starting at time t0. firstRun forces which bus to take on leg 1.
+function chain(opt, from, t0, firstRun) {
+  const to = PLAN.places[opt.to];
+  if (opt.walk) { const w = walkMin(from, to); return { leave: t0, arrive: t0 + w * 60000, steps: [{ walk: w }] }; }
+  let pos = from, t = t0, leave = null; const steps = [];
+  for (let i = 0; i < opt.legs.length; i++) {
+    const leg = opt.legs[i], stop = PLAN.stops[leg.board], off = PLAN.stops[leg.alight];
+    const w = walkMin(pos, stop), ready = t + w * 60000;
+    const runs = legRuns(leg);
+    if (!runs) return { missing: true };
+    let run;
+    if (i === 0 && firstRun) { run = firstRun; if (run.dep < ready - 30000) return null; }
+    else run = runs.filter((r) => r.dep >= ready - 30000).sort((a, b) => a.arr - b.arr)[0];
+    if (!run) return null;
+    if (i === 0) leave = run.dep - w * 60000;
+    steps.push({ walk: w, to: stop.name }, { route: run.route, dep: run.dep, arr: run.arr, off: off.name });
+    pos = off; t = run.arr;
+  }
+  const wEnd = walkMin(pos, to);
+  steps.push({ walk: wEnd, to: to.name });
+  return { leave, arrive: t + wEnd * 60000, steps };
+}
+
+function deadlineTime() {
+  if (!deadline) return null;
+  const [h, m] = deadline.split(":").map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  if (d.getTime() < Date.now() - 60000) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+function planOptions(from) {
+  const now = Date.now(), by = deadlineTime();
+  return PLAN.options.filter((o) => o.to === dest).map((opt) => {
+    if (opt.walk) {
+      const c = chain(opt, from, now);
+      if (by) { const dur = c.arrive - now; return { opt, ...c, leave: by - dur, arrive: by, ok: by - dur >= now - 60000 }; }
+      return { opt, ...c, ok: true };
+    }
+    if (!by) { const c = chain(opt, from, now); return c && !c.missing ? { opt, ...c, ok: true } : { opt, none: true, missing: c?.missing }; }
+    // Arrive-by: try each catchable first bus, keep the latest departure that still makes it.
+    const runs = legRuns(opt.legs[0]);
+    if (!runs) return { opt, none: true, missing: true };
+    let best = null, latestSeen = 0, earliest = null;
+    for (const r of runs) {
+      const c = chain(opt, from, now, r);
+      if (!c || c.missing) continue;
+      latestSeen = Math.max(latestSeen, c.arrive);
+      if (!earliest || c.arrive < earliest.arrive) earliest = c;
+      if (c.arrive <= by && c.leave >= now - 60000 && (!best || c.leave > best.leave)) best = c;
+    }
+    if (best) return { opt, ...best, ok: true };
+    if (latestSeen && latestSeen < by) return { opt, tooEarly: true, sample: earliest };
+    return { opt, late: true, earliest };
+  });
+}
+
+function stepsHtml(steps) {
+  return steps.map((st) => st.route
+    ? `<span class="chip-s">${esc(st.route)}</span> ${hm(st.dep)} → off ${esc(st.off)} ${hm(st.arr)}`
+    : `Walk ${st.walk} min${st.to ? ` to ${esc(st.to)}` : ""}`).join(" · ");
+}
+
+function renderPlan() {
+  const el = $("#plan");
+  if (!PLAN) { el.style.display = "none"; return; }
+  el.style.display = "";
+  const places = PLAN.places;
+  let fromLabel, from;
+  const nearPlace = here && Object.entries(places).find(([, p]) => walkMin(here, p) <= 5);
+  if (!dest) dest = nearPlace && nearPlace[0] === "parsons" ? "home" : "parsons";
+  if (here && !(nearPlace && nearPlace[0] === dest)) { from = here; fromLabel = nearPlace ? `From ${places[nearPlace[0]].name}` : "From where you are"; }
+  else { const other = Object.keys(places).find((k) => k !== dest); from = places[other]; fromLabel = `Assuming you leave from ${places[other].name}`; }
+
+  const res = planOptions(from);
+  const by = deadlineTime();
+  const good = res.filter((r) => r.ok);
+  good.sort((a, b) => (by ? b.leave - a.leave || a.arrive - b.arrive : a.arrive - b.arrive || b.leave - a.leave));
+  const bestR = good[0];
+  const now = Date.now();
+
+  const rows = [...good, ...res.filter((r) => !r.ok)].map((r) => {
+    const isBest = r === bestR;
+    if (!r.ok) {
+      let why = r.missing ? "Loading live times…" : r.opt.walk ? `Too far to walk there by ${hm(by)}` : "No bus you can catch is tracked right now";
+      if (r.tooEarly && r.sample) why = `Too early for live times. It takes about ${Math.round((r.sample.arrive - r.sample.leave) / 60000)} min, so leave around ${hm(by - (r.sample.arrive - r.sample.leave) - 5 * 60000)}`;
+      if (r.late && r.earliest) why = `Can't make ${hm(by)}. Earliest arrival is ${hm(r.earliest.arrive)}`;
+      return `<div class="opt dim"><div class="opt-row"><span class="opt-name">${esc(r.opt.name)}</span></div><div class="opt-steps">${why}</div></div>`;
+    }
+    const leaveIn = Math.round((r.leave - now) / 60000);
+    const leaveTxt = leaveIn <= 0 ? "Leave now" : `Leave in ${leaveIn} min (${hm(r.leave)})`;
+    const diff = !isBest && bestR ? (by ? Math.round((bestR.leave - r.leave) / 60000) : Math.round((r.arrive - bestR.arrive) / 60000)) : 0;
+    const right = by
+      ? `<b>${hm(r.leave)}</b><br><span>leave by${diff > 0 ? ` · ${diff} min earlier` : ""}</span>`
+      : `<b>${hm(r.arrive)}</b><br><span>arrive${diff > 0 ? ` · +${diff} min` : ""}</span>`;
+    return `<div class="opt ${isBest ? "best" : ""}">
+      <div class="opt-row">
+        <div><span class="opt-name">${esc(r.opt.name)}</span>${isBest ? `<span class="best-tag">BEST</span>` : ""}
+          <div class="opt-leave">${by ? `Arrive ${hm(r.arrive)}` : leaveTxt} · ${Math.round((r.arrive - r.leave) / 60000)} min trip</div></div>
+        <div class="opt-arr">${right}</div>
+      </div>
+      <div class="opt-steps">${stepsHtml(r.steps)}</div>
+    </div>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="plan-top">
+      <span class="plan-title">Best route</span>
+      <span class="seg" role="group" aria-label="Destination">
+        ${Object.entries(places).map(([k, p]) => `<button data-dest="${k}" aria-pressed="${k === dest}">to ${esc(p.name)}</button>`).join("")}
+      </span>
+    </div>
+    <div class="plan-from">${esc(fromLabel)}</div>
+    <div class="by"><label for="by">Arrive by</label><input id="by" type="time" value="${esc(deadline)}">${deadline ? `<button data-clear-by>Clear</button>` : `<span>or leave now</span>`}</div>
+    ${rows}`;
+}
+
+document.addEventListener("click", (e) => {
+  const d = e.target.closest("[data-dest]");
+  if (d) { dest = d.dataset.dest; try { localStorage.setItem("qb-dest", dest); } catch {} renderPlan(); }
+  if (e.target.closest("[data-clear-by]")) { deadline = ""; renderPlan(); }
+});
+document.addEventListener("change", (e) => {
+  if (e.target.id === "by") { deadline = e.target.value; renderPlan(); }
+});
+
 function render() {
   $("#stops").innerHTML = orderedStops().map((s) => card(s, cache[s.stop])).join("") || `<p class="empty">No saved stops yet.</p>`;
+  renderPlan();
   $("#adhoc").innerHTML = adhoc ? card({ stop: adhoc }, cache[adhoc], { alwaysOpen: true }) : "";
 }
 
 async function refresh() {
   $("#stops").classList.add("spin");
-  const codes = [...stops.map((s) => s.stop), ...(adhoc ? [adhoc] : [])];
+  const planCodes = PLAN ? Object.keys(PLAN.stops) : [];
+  const codes = [...new Set([...stops.map((s) => s.stop), ...planCodes, ...(adhoc ? [adhoc] : [])])];
   const results = await Promise.all(codes.map(getArrivals));
   codes.forEach((c, i) => (cache[c] = results[i]));
+  fetchedAt = Date.now();
   $("#stops").classList.remove("spin");
   render();
   $("#updated").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
@@ -301,7 +494,10 @@ async function checkForUpdate() {
 async function init() {
   checkForUpdate();
   locate();
-  stops = await fetch("/stops.json", { cache: "no-cache" }).then((r) => r.json()).catch(() => []);
+  [stops, PLAN] = await Promise.all([
+    fetch("/stops.json", { cache: "no-cache" }).then((r) => r.json()).catch(() => []),
+    fetch("/plan.json", { cache: "no-cache" }).then((r) => r.json()).catch(() => null),
+  ]);
   render();
   refresh();
   setInterval(() => document.visibilityState === "visible" && refresh(), 30000);

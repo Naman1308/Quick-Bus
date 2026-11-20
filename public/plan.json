@@ -1,0 +1,31 @@
+{
+  "places": {
+    "home": { "name": "Home", "lat": 40.7473, "lon": -73.9770 },
+    "parsons": { "name": "Parsons", "lat": 40.7354, "lon": -73.9942 }
+  },
+  "stops": {
+    "403821": { "name": "Lexington Av & E 34 St", "lat": 40.746226, "lon": -73.979892 },
+    "404106": { "name": "3 Av & E 14 St", "lat": 40.732955, "lon": -73.987502 },
+    "400323": { "name": "5 Av & W 36 St", "lat": 40.749477, "lon": -73.983921 },
+    "402857": { "name": "5 Av & W 14 St", "lat": 40.735713, "lon": -73.993952 },
+    "404271": { "name": "E 14 St & University Pl", "lat": 40.735177, "lon": -73.991881 },
+    "401191": { "name": "E 14 St & 3 Av", "lat": 40.733008, "lon": -73.986729 },
+    "403913": { "name": "3 Av & E 14 St", "lat": 40.733689, "lon": -73.986787 },
+    "402677": { "name": "3 Av & E 37 St", "lat": 40.747988, "lon": -73.97637 }
+  },
+  "options": [
+    { "to": "parsons", "name": "Lexington Av buses",
+      "legs": [{ "board": "403821", "routes": ["M101", "M102", "M103"], "alight": "404106", "ride": 12 }] },
+    { "to": "parsons", "name": "5th Ave buses",
+      "legs": [{ "board": "400323", "routes": ["M1", "M2", "M3", "M55"], "alight": "402857", "ride": 13 }] },
+    { "to": "parsons", "name": "Walk", "walk": true },
+    { "to": "home", "name": "M14, then 3rd Ave bus",
+      "legs": [
+        { "board": "404271", "routes": ["M14"], "alight": "401191", "ride": 5 },
+        { "board": "403913", "routes": ["M101", "M102", "M103"], "alight": "402677", "ride": 15 }
+      ] },
+    { "to": "home", "name": "Walk to 3rd Ave bus",
+      "legs": [{ "board": "403913", "routes": ["M101", "M102", "M103"], "alight": "402677", "ride": 15 }] },
+    { "to": "home", "name": "Walk", "walk": true }
+  ]
+}

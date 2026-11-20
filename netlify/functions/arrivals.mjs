@@ -13,6 +13,7 @@ export default async (req) => {
   const stop = new URL(req.url).searchParams.get("stop") ?? "";
   if (!/^\d{6}$/.test(stop)) return json({ error: "Stop code must be 6 digits" }, 400);
 
+  const max = Math.min(Math.max(parseInt(new URL(req.url).searchParams.get("max") || "30", 10) || 30, 1), 40);
   const key = process.env.MTA_BUSTIME_KEY;
   if (!key) return json({ error: "MTA_BUSTIME_KEY is not set in Netlify" }, 500);
 
@@ -22,7 +23,7 @@ export default async (req) => {
     OperatorRef: "MTA",
     MonitoringRef: stop,
     StopMonitoringDetailLevel: "normal",
-    MaximumStopVisits: "12",
+    MaximumStopVisits: String(max),
   });
 
   let lastErr = "No response";
