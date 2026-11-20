@@ -1,6 +1,6 @@
 [
   {
-    "label": "Home → Union Sq",
+    "label": "Home → Parsons via Lex Av",
     "from": "Lexington Av & E 34 St",
     "dir": "down",
     "stop": "403821",
@@ -13,7 +13,19 @@
     "lon": -73.979892
   },
   {
-    "label": "Home → Parsons",
+    "label": "3 Av → Parsons",
+    "from": "E 14 St & 3 Av",
+    "dir": "west",
+    "note": "M14 after the M101/102/103",
+    "stop": "403871",
+    "routes": [
+      "M14"
+    ],
+    "lat": 40.733546,
+    "lon": -73.98758
+  },
+  {
+    "label": "Home → Parsons via 5th Ave",
     "from": "5 Av & W 36 St",
     "dir": "down",
     "stop": "400323",
