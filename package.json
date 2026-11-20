@@ -1,8 +1,0 @@
-{
-  "name": "quick-bus",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "gtfs-realtime-bindings": "^1.1.1"
-  }
-}

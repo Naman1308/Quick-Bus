@@ -1,4 +1,40 @@
-import GtfsRealtimeBindings from "gtfs-realtime-bindings";
+// Minimal protobuf reader for the few GTFS-realtime fields we need (no dependencies).
+function* fields(buf, start = 0, end = buf.length) {
+  let i = start;
+  const varint = () => { let x = 0n, shift = 0n, b; do { b = buf[i++]; x |= BigInt(b & 0x7f) << shift; shift += 7n; } while (b & 0x80); return x; };
+  while (i < end) {
+    const key = Number(varint()), no = key >>> 3, wt = key & 7;
+    if (wt === 0) yield { no, v: varint() };
+    else if (wt === 2) { const len = Number(varint()); yield { no, s: i, e: i + len }; i += len; }
+    else if (wt === 1) i += 8;
+    else if (wt === 5) i += 4;
+    else throw new Error("Bad protobuf");
+  }
+}
+const str = (buf, f) => new TextDecoder().decode(buf.subarray(f.s, f.e));
+function decodeFeed(buf) {
+  const entity = [];
+  for (const f of fields(buf)) {
+    if (f.no !== 2 || f.s == null) continue; // FeedMessage.entity
+    for (const g of fields(buf, f.s, f.e)) {
+      if (g.no !== 3 || g.s == null) continue; // FeedEntity.trip_update
+      const tu = { trip: {}, stopTimeUpdate: [] };
+      for (const h of fields(buf, g.s, g.e)) {
+        if (h.no === 1 && h.s != null) for (const k of fields(buf, h.s, h.e)) { if (k.no === 5 && k.s != null) tu.trip.routeId = str(buf, k); }
+        if (h.no === 2 && h.s != null) {
+          const st = {};
+          for (const k of fields(buf, h.s, h.e)) {
+            if (k.no === 4 && k.s != null) st.stopId = str(buf, k);
+            if ((k.no === 2 || k.no === 3) && k.s != null) for (const m of fields(buf, k.s, k.e)) if (m.no === 2 && m.v != null) st[k.no === 2 ? "arrival" : "departure"] = { time: Number(m.v) };
+          }
+          tu.stopTimeUpdate.push(st);
+        }
+      }
+      entity.push({ tripUpdate: tu });
+    }
+  }
+  return { entity };
+}
 
 // Live subway trips from MTA's GTFS-realtime feed (no key needed). For each train on the given lines
 // that stops at `from` and later at `to`, return when it leaves `from` and reaches `to`.
@@ -41,7 +77,7 @@ export default async (req) => {
     for (const f of feeds) {
       const r = await fetch(`https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/${f}`, { signal: AbortSignal.timeout(8000) });
       if (!r.ok) return json({ error: `MTA subway feed returned ${r.status}` }, 502);
-      const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(await r.arrayBuffer()));
+      const feed = decodeFeed(new Uint8Array(await r.arrayBuffer()));
       runs = runs.concat(runsFromFeed(feed, from, to, routes, now));
     }
     return json({ runs: runs.sort((a, b) => a.dep - b.dep).slice(0, 12), updated: new Date().toISOString() });
