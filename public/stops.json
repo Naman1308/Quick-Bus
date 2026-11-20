@@ -1,36 +1,39 @@
 [
   {
-    "label": "Lexington Av & E 34 St",
+    "label": "Home → Union Sq",
+    "from": "Lexington Av & E 34 St",
+    "dir": "down",
     "stop": "403821",
-    "routes": [
-      "M101",
-      "M102",
-      "M103"
-    ],
-    "note": "Downtown to 3 Av & E 14 St"
+    "routes": ["M101", "M102", "M103"],
+    "lat": 40.746226,
+    "lon": -73.979892
   },
   {
-    "label": "3 Av & E 14 St",
-    "stop": "403913",
-    "routes": [
-      "M101",
-      "M102",
-      "M103"
-    ],
-    "note": "Uptown to 3 Av & E 37 St"
-  },
-  {
-    "label": "5 Av & 36 St",
+    "label": "Home → Parsons",
+    "from": "5 Av & W 36 St",
+    "dir": "down",
     "stop": "400323",
     "routes": [],
-    "note": "Downtown"
+    "lat": 40.749477,
+    "lon": -73.983921
   },
   {
-    "label": "14 St & University Pl",
+    "label": "Parsons → Midtown",
+    "from": "E 14 St & University Pl",
+    "dir": "east",
+    "note": "M14 to 3 Av for the M101/102/103",
     "stop": "404271",
-    "routes": [
-      "M14"
-    ],
-    "note": "Eastbound to 1 Av"
+    "routes": ["M14"],
+    "lat": 40.735177,
+    "lon": -73.991881
+  },
+  {
+    "label": "Union Sq → Home",
+    "from": "3 Av & E 14 St",
+    "dir": "up",
+    "stop": "403913",
+    "routes": ["M101", "M102", "M103"],
+    "lat": 40.733689,
+    "lon": -73.986787
   }
 ]
